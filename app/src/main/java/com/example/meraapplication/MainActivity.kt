@@ -30,6 +30,8 @@ import kotlin.collections.ArrayList
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import kotlin.math.abs
+import kotlin.math.pow
 
 
 class MainActivity : AppCompatActivity() {
@@ -37,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     val tag = "MERA_APP"
     val tagTcp = "MERA_APP_TCP"
     val tagPublish = "PUBLISH_TCP"
+    val tagDistance= "DISTANCE_BEACON"
     val filters = ArrayList<ScanFilter>(1)
     val uid = ParcelUuid.fromString("0000feaa-0000-1000-8000-00805f9b34fb")
     val filter = ScanFilter.Builder().setServiceUuid(uid).build()
@@ -63,30 +66,105 @@ class MainActivity : AppCompatActivity() {
 
     private val timerTaks = object : TimerTask() {
         override fun run() {
-            roomView.setPoint(0F, 0F)
+            calculatePosition(messageMap)
             if (isConnected){
                 publishMessage(gson.toJson(messageMap))
-                calculateDistance(messageMap)
             }
         }
 
     }
+    /*
+    obj.addProperty("xCord", xCord)
+                        obj.addProperty("yCord", yCord)
+                        obj.addProperty("rssi", rssi)
+                        obj.addProperty("rssCalib", rssCalib)
+     */
 
-    private fun calculateDistance(messageMap: ConcurrentHashMap<Int, JsonObject>) {
+    private fun calculatePosition(messageMap: ConcurrentHashMap<Int, JsonObject>) {
 
+        if(messageMap.size >= 3){
+            val items = messageMap.values.sortedBy { abs(it["rssi"].asInt*-1 ) }
+            val obj1 = items[0]
+            val x1 = obj1["xCord"].asFloat
+            val y1 = obj1["yCord"].asFloat
+            val r1 = getRadius(obj1["rssCalib"].asInt, obj1["rssi"].asInt)
+            val obj2 = items[1]
+
+            val x2 = obj2["xCord"].asFloat
+            val y2 = obj2["yCord"].asFloat
+            val r2 = getRadius(obj2["rssCalib"].asInt, obj2["rssi"].asInt)
+            val obj3 = items[2]
+            val x3 = obj3["xCord"].asFloat
+            val y3 = obj3["yCord"].asFloat
+            val r3 = getRadius(obj3["rssCalib"].asInt, obj3["rssi"].asInt)
+
+           /* Log.d(tagDistance, "rss1 ${obj1["rssi"].asInt}")
+            Log.d(tagDistance, "rss2 ${obj2["rssi"].asInt}")
+            Log.d(tagDistance, "rss3 ${obj3["rssi"].asInt}")
+*/
+            val result = trackPhone(
+                x1,y1,r1,
+                x2,y2,r2,
+                x3,y3,r3)
+            GlobalScope.launch(Dispatchers.Main) {
+                roomView.setPoint(result.first, result.second)
+            }
+            Log.d(tagDistance, "position result ${result.first} ${result.second}")
+        }
+    }
+
+    private fun getRadius(rssiCalib: Int, rssiRaw: Int): Float{
+        //hack
+        val rssi = Math.abs(rssiRaw)
+        if (30 < rssi && rssi <= 40)
+            return 0.5.toFloat()
+        else if (40 < rssi && rssi <= 50)
+            return 1.toFloat()
+        else if (50 < rssi && rssi <= 60)
+            return 2.5.toFloat()
+        else if (60 < rssi && rssi <= 70)
+            return 5.toFloat()
+        else if (70 < rssi && rssi <= 80)
+            return 7.5.toFloat()
+        else if (80 < rssi && rssi <= 90)
+            return 17.5.toFloat()
+        else if (90 < rssi && rssi <= 100)
+            return 30.toFloat()
+
+        return 30.toFloat()
+    }
+
+    private fun getRadius1(rssiCalib: Int, rssiRaw: Int): Float{
+        return Math.pow(10.0, ((rssiCalib - rssiRaw) / (10 * 2)).toDouble()).toFloat()
+    }
+
+    private fun trackPhone(x1:Float,y1:Float,r1:Float,
+                   x2:Float,y2:Float,r2:Float,x3:Float,
+                   y3:Float,r3:Float): Pair<Float,Float> {
+        val A = 2 * x2 - 2 * x1
+        val B = 2 * y2 - 2 * y1
+        val C = r1.pow(2)-r2.pow(2)-x1.pow(2)+x2.pow(2)-y1.pow(2)+y2.pow(2)
+        val D = 2 * x3 - 2 * x2
+        val E = 2 * y3 - 2 * y2
+        val F = r2.pow(2)-r3.pow(2)-x2.pow(2)+x3.pow(2)-y2.pow(2)+y3.pow(2)
+        val val1 = if((E * A - B * D).toInt() == 0) 1.0.toFloat() else (E * A - B * D)
+        val val2 = if((B * D - A * E).toInt() == 0) 1.0.toFloat() else (B * D - A * E)
+        val x = (C * E ) / val1
+        val y = (C * D ) /val2
+        return Pair(Math.abs(x/200),Math.abs(y/200))
     }
 
     private val coordinatesTask = object : TimerTask() {
         override fun run() {
             GlobalScope.launch {
-                val response = coordinatesService.getCoordinates()
+                /*val response = coordinatesService.getCoordinates()
                 if(response.isSuccessful){
                     response.body()?.let { data ->
                         GlobalScope.launch(Dispatchers.Main) {
                             roomView.setPoint(data.x.toFloat(), data.y.toFloat())
                         }
                     }
-                }
+                }*/
             }
         }
 

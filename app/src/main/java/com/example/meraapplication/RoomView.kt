@@ -46,7 +46,7 @@ class RoomView : View {
 
     fun setPoint(x: Float, y: Float) {
         point.x = ((x / roomX) * width).toInt()
-        point.y = (((roomY - y) / roomY) * height).toInt()
+        point.y = (((y) / roomY) * height).toInt()
         invalidate()
     }
 }
